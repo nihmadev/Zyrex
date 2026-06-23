@@ -1,0 +1,183 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+    id 'maven-publish'
+    id("org.jetbrains.kotlin.jvm") version "2.1.20"
+}
+
+version = project.mod_version
+group = project.maven_group
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven {
+        name = "meteor-maven-snapshots"
+        url = "https://maven.meteordev.org/snapshots"
+    }
+    maven {
+        name = "terraformersmc"
+        url = "https://maven.terraformersmc.com/"
+    }
+    maven {
+        name = "modrinth"
+        url = "https://api.modrinth.com/maven"
+    }
+    mavenCentral()
+}
+
+loom {
+    accessWidenerPath = file("src/main/resources/accesswidener")
+}
+
+configurations {
+    libImpl
+    modImpl
+    yguard
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    include(modImplementation('io.netty:netty-handler-proxy:4.1.82.Final'))
+    include(modImplementation('io.netty:netty-codec-socks:4.1.82.Final'))
+    modImpl("com.terraformersmc:modmenu:13.0.4")
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation group: 'com.github.ben-manes.caffeine', name: 'caffeine', version: '3.1.8'
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+    modCompileOnly "meteordevelopment:baritone:1.21.4-SNAPSHOT"
+    libImpl("org.jetbrains.kotlin:kotlin-stdlib:2.0.0")
+    implementation 'com.google.code.gson:gson:2.10.1'
+    modImplementation 'org.java-websocket:Java-WebSocket:1.5.6'
+
+    configurations.libImpl.dependencies.each { implementation(it) }
+    configurations.modImpl.dependencies.each { include(modImplementation(it)) }
+    yguard files('yworks/lib/yguard-5.0.0.jar')
+}
+
+processResources {}
+
+def targetJavaVersion = 21
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
+        it.options.release.set(targetJavaVersion)
+    }
+}
+
+java {
+    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
+    if (JavaVersion.current() < javaVersion) {
+        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+    withSourcesJar()
+}
+
+compileKotlin {}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.archivesBaseName}"}
+    }
+    from {
+        configurations.libImpl.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {}
+}
+
+task obfuscateMod {
+    dependsOn remapJar
+    group 'yGuard'
+    description 'Obfuscates the mod jar using yGuard.'
+
+    doLast {
+        def archivePath = remapJar.archiveFile.get().asFile.path
+        def unobfJar = archivePath.replace(".jar", "_unobf.jar")
+
+        ant.move(file: archivePath, tofile: unobfJar, verbose: true)
+
+        ant.taskdef(
+            name: 'yguard',
+            classname: 'com.yworks.yguard.YGuardTask',
+            classpath: configurations.yguard.asPath
+        )
+
+        ant.yguard {
+            inoutpair(in: unobfJar, out: archivePath)
+
+            externalclasses {
+                pathelement(location: sourceSets.main.compileClasspath.asPath)
+            }
+
+            attribute(name: "SourceFile, LineNumberTable, LocalVariableTable")
+
+            rename(
+                logfile: "${buildDir}/zyrex_renamelog.xml"
+            ) {
+                property(name: "naming-scheme", value: "small")
+                property(name: "language-conformity", value: "illegal")
+                property(name: "overload-enabled", value: "true")
+                property(name: "scramble", value: "true")
+
+                // Обновляем содержимое refmap/mixins — заменяет оригинальные имена классов на обфусцированные
+                adjust(replaceContentPolicy: "strict", replaceContentSeparator: "/") {
+                    include(name: "zyrex-refmap.json")
+                    include(name: "mixins.json")
+                }
+
+                // Перемешиваем пути .class файлов в JAR
+                adjust(replacePathPolicy: "file") {
+                    include(name: "**/*.class")
+                }
+
+                keep {
+                    'class'(name: 'lol.zyrex.Zyrex')
+
+                    'class'(classes: 'private', methods: 'private', fields: 'private') {
+                        patternset {
+                            include(name: 'lol.zyrex.mixins.**')
+                        }
+                    }
+
+                    'class'(classes: 'private', methods: 'private', fields: 'private') {
+                        patternset {
+                            include(name: 'kotlin.**')
+                            include(name: 'org.intellij.**')
+                            include(name: 'org.jetbrains.**')
+                            include(name: 'antidaunleak.**')
+                        }
+                    }
+
+                    'class'(classes: 'private', methods: 'private', fields: 'private') {
+                        patternset {
+                            include(name: 'lol.zyrex.common.repository.macro.Macro')
+                            include(name: 'lol.zyrex.common.repository.way.Way')
+                            include(name: 'lol.zyrex.common.repository.staff.StaffRepository')
+                            include(name: 'lol.zyrex.common.repository.staff.StaffRepository$Staff')
+                        }
+                    }
+
+                    'class'(classes: 'protected', methods: 'protected', fields: 'protected')
+                }
+            }
+        }
+
+        ant.delete(file: unobfJar)
+    }
+}
+
+obfuscateMod.onlyIf {
+    project.findProperty('obfuscate') == 'true'
+}
+build.dependsOn obfuscateMod

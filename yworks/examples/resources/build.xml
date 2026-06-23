@@ -1,0 +1,65 @@
+<project>
+  <property name="project.dir" value="${basedir}/../.."/>
+  <property name="source.dir" value="${basedir}/src"/>
+  <property name="target.dir" value="${basedir}/build"/>
+  <property name="yguard.version" value="5.0.0"/>
+
+  <property name="project.name" value="resources"/>
+  <property name="project.jar.unobf" value="${target.dir}/jar/${project.name}_unobf.jar"/>
+  <property name="project.jar" value="${target.dir}/jar/${project.name}.jar"/>
+  <property name="project.rename.log" value="${target.dir}/${project.name}_renamelog.xml"/>
+  <property name="mainclass" value="com.yworks.example.HelloWorld"/>
+
+  <target name="clean">
+    <delete dir="${target.dir}"/>
+  </target>
+
+  <target name="compile">
+    <mkdir dir="${target.dir}/classes"/>
+    <javac includeantruntime="false" srcdir="${source.dir}" destdir="${target.dir}/classes"/>
+  </target>
+
+  <target name="jar" depends="compile">
+    <mkdir dir="${target.dir}/jar"/>
+    <jar destfile="${project.jar.unobf}">
+      <fileset dir="${target.dir}/classes"/>
+      <fileset dir="${source.dir}/main/resources"/>
+      <manifest>
+        <attribute name="Main-Class" value="${mainclass}"/>
+      </manifest>
+    </jar>
+  </target>
+
+  <target name="obfuscate" depends="jar">
+    <taskdef
+     name="yguard"
+     classname="com.yworks.yguard.YGuardTask"
+     classpath="${project.dir}/lib/yguard-${yguard.version}.jar"/>
+
+    <yguard>
+    <inoutpair in="${project.jar.unobf}" out="${project.jar}"/>
+
+      <rename logfile="${project.rename.log}">
+        <adjust replacePath="false">
+          <!-- keep the complete path to the resources even if -->
+          <!-- package com.yworks.example gets obfuscated by name -->
+          <include name="com/yworks/example/resources/*"/>
+        </adjust>
+        <adjust replaceContent="true" replaceContentSeparator="." replaceName="true">
+          <!-- plain-text class names in the config files will -->
+          <!-- be replaced with the obfuscated name versions -->
+          <!-- replace the .properties files' names with the obfuscated -->
+          <!-- versions if the corresponding .class files get obfuscated -->
+          <include name="**/*.properties"/>
+        </adjust>
+        <keep>
+          <method name="void main(java.lang.String[])" class="${mainclass}"/>
+        </keep>
+      </rename>
+    </yguard>
+  </target>
+
+  <target name="run" depends="obfuscate">
+    <java jar="${project.jar}" fork="true"/>
+  </target>
+</project>

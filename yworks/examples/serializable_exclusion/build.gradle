@@ -1,0 +1,59 @@
+plugins {
+  id 'application'
+}
+
+application {
+  mainClassName = 'com.yworks.example.HelloWorld'
+}
+
+jar {
+  manifest {
+    attributes(
+      'Main-Class': application.mainClassName
+    )
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+configurations {
+  yguard
+}
+
+dependencies {
+  yguard 'com.yworks:yguard:5.0.0'
+}
+
+task obfuscate {
+  dependsOn jar
+  group 'yGuard'
+  description 'Obfuscates the java archive.'
+
+  doLast {
+    def archivePath = jar.archiveFile.get().asFile.path
+    def unobfJar = archivePath.replace(".jar", "_unobf.jar")
+
+    ant.move(file: archivePath, tofile: unobfJar, verbose: true)
+
+    ant.taskdef(
+      name: 'yguard',
+      classname: 'com.yworks.yguard.YGuardTask',
+      classpath: configurations.yguard.asPath
+    )
+    ant.yguard {
+      inoutpair(in: unobfJar, out: archivePath)
+      rename(logfile: "${buildDir}/${rootProject.name}_renamelog.xml") {
+        keep {
+          'class'(implements: 'java.io.Serializable', methods: 'private', fields: 'private')
+
+          method(name: 'void main(java.lang.String[])', class: application.mainClassName)
+        }
+      }
+    }
+  }
+}
+
+distTar.dependsOn obfuscate
+distZip.dependsOn obfuscate

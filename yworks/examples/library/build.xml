@@ -1,0 +1,53 @@
+<project>
+  <property name="project.dir" value="${basedir}/../.."/>
+  <property name="source.dir" value="${basedir}/src"/>
+  <property name="target.dir" value="${basedir}/build"/>
+  <property name="yguard.version" value="5.0.0"/>
+
+  <property name="project.name" value="library"/>
+  <property name="project.jar.unobf" value="${target.dir}/jar/${project.name}_unobf.jar"/>
+  <property name="project.jar" value="${target.dir}/jar/${project.name}.jar"/>
+  <property name="project.rename.log" value="${target.dir}/${project.name}_renamelog.xml"/>
+
+  <target name="clean">
+    <delete dir="${target.dir}"/>
+  </target>
+
+  <target name="compile">
+    <mkdir dir="${target.dir}/classes"/>
+    <javac includeantruntime="false" srcdir="${source.dir}" destdir="${target.dir}/classes"/>
+  </target>
+
+  <target name="jar" depends="compile">
+    <mkdir dir="${target.dir}/jar"/>
+    <jar destfile="${project.jar.unobf}" basedir="${target.dir}/classes"/>
+  </target>
+
+  <target name="obfuscate" depends="jar">
+    <taskdef
+     name="yguard"
+     classname="com.yworks.yguard.YGuardTask"
+     classpath="${project.dir}/lib/yguard-${yguard.version}.jar"/>
+
+    <yguard>
+      <inoutpair in="${project.jar.unobf}" out="${project.jar}"/>
+
+      <!--
+        Prevent yGuard from removing "Deprecated" attributes from .class
+        files.
+        -->
+      <attribute name="Deprecated"/>
+
+      <rename logfile="${project.rename.log}">
+        <keep>
+          <class classes="protected" methods="protected" fields="protected"/>
+        </keep>
+      </rename>
+    </yguard>
+  </target>
+
+  <target name="run" depends="obfuscate">
+    <echo>This example demonstrates obfuscation for a Java library.
+Thus, there is no main class to execute.</echo>
+  </target>
+</project>

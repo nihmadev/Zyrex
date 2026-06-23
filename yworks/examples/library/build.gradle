@@ -1,0 +1,48 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  mavenCentral()
+}
+
+configurations {
+  yguard
+}
+
+dependencies {
+  yguard 'com.yworks:yguard:5.0.0'
+}
+
+task obfuscate   {
+  dependsOn jar
+  group 'yGuard'
+  description 'Obfuscates the java archive.'
+
+  doLast {
+    def archivePath = jar.archiveFile.get().asFile.path
+    def unobfJar = archivePath.replace(".jar", "_unobf.jar")
+
+    ant.move(file: archivePath, tofile: unobfJar, verbose: true)
+
+    ant.taskdef(
+      name: 'yguard',
+      classname: 'com.yworks.yguard.YGuardTask',
+      classpath: configurations.yguard.asPath
+    )
+    ant.yguard {
+      inoutpair(in: unobfJar, out: archivePath)
+
+      // Prevent yGuard from removing "Deprecated" attributes from .class files.
+      attribute(name: "Deprecated")
+
+      rename(logfile: "${buildDir}/${rootProject.name}_renamelog.xml") {
+        keep {
+          'class'(classes: 'protected', methods: 'protected', fields: 'protected')
+        }
+      }
+    }
+  }
+}
+
+assemble.dependsOn obfuscate
